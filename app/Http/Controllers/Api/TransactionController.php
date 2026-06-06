@@ -28,11 +28,19 @@ class TransactionController extends Controller
 
     public function show(Request $request, $id)
     {
+        $user = $request->user();
         $transaction = Transaction::findOrFail($id);
         $branchId = $this->getBranchId($request);
 
-        if ($branchId && $transaction->branch_id != $branchId) {
-            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        if ($branchId) {
+            if ($transaction->branch_id != $branchId) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+        } elseif ($user->isOwner()) {
+            $branchIds = Branch::where('owner_id', $user->id)->pluck('id');
+            if (!in_array($transaction->branch_id, $branchIds->toArray())) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
         }
 
         return response()->json([
@@ -167,11 +175,19 @@ class TransactionController extends Controller
 
     public function update(Request $request, $id)
     {
+        $user = $request->user();
         $transaction = Transaction::findOrFail($id);
         $branchId = $this->getBranchId($request);
 
-        if ($branchId && $transaction->branch_id != $branchId) {
-            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        if ($branchId) {
+            if ($transaction->branch_id != $branchId) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+        } elseif ($user->isOwner()) {
+            $branchIds = Branch::where('owner_id', $user->id)->pluck('id');
+            if (!in_array($transaction->branch_id, $branchIds->toArray())) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
         }
 
         $validated = $request->validate([
@@ -225,11 +241,19 @@ class TransactionController extends Controller
 
     public function destroy(Request $request, $id)
     {
+        $user = $request->user();
         $transaction = Transaction::findOrFail($id);
         $branchId = $this->getBranchId($request);
 
-        if ($branchId && $transaction->branch_id != $branchId) {
-            return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        if ($branchId) {
+            if ($transaction->branch_id != $branchId) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
+        } elseif ($user->isOwner()) {
+            $branchIds = Branch::where('owner_id', $user->id)->pluck('id');
+            if (!in_array($transaction->branch_id, $branchIds->toArray())) {
+                return response()->json(['success' => false, 'message' => 'Not found'], 404);
+            }
         }
 
         $txBranchId = $transaction->branch_id;

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Traits;
 
+use App\Models\Branch;
 use Illuminate\Http\Request;
 
 trait BranchScope
@@ -28,10 +29,14 @@ trait BranchScope
 
     protected function applyBranchScope($query, Request $request)
     {
+        $user = $request->user();
         $branchId = $this->getBranchId($request);
 
         if ($branchId) {
             $query->where('branch_id', $branchId);
+        } elseif ($user->isOwner()) {
+            $branchIds = Branch::where('owner_id', $user->id)->pluck('id');
+            $query->whereIn('branch_id', $branchIds);
         }
 
         return $query;

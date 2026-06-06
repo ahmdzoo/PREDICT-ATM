@@ -21,24 +21,20 @@ class DashboardController extends Controller
         $branchId = $this->getBranchId($request);
         $isAllBranches = $user->isOwner() && !$branchId;
 
-        $todayTransactions = Transaction::whereDate('created_at', today());
-        if ($branchId) {
-            $todayTransactions->where('branch_id', $branchId);
-        }
+        $userBranches = $user->isOwner()
+            ? Branch::where('owner_id', $user->id)->pluck('id')
+            : collect([$user->branch_id]);
+
+        $todayTransactions = Transaction::whereDate('created_at', today())
+            ->whereIn('branch_id', $userBranches);
         $todayCount = $todayTransactions->count();
 
         $todayProfit = (clone $todayTransactions)->sum('biaya_admin');
 
         $totalProfit = Transaction::whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year);
-        if ($branchId) {
-            $totalProfit->where('branch_id', $branchId);
-        }
+            ->whereYear('created_at', now()->year)
+            ->whereIn('branch_id', $userBranches);
         $monthProfit = $totalProfit->sum('biaya_admin');
-
-        $userBranches = $user->isOwner()
-            ? Branch::where('owner_id', $user->id)->pluck('id')
-            : collect([$user->branch_id]);
 
         $masterBanks = MasterBank::where('is_active', true)->orderBy('tipe')->orderBy('id')->get();
 
@@ -47,6 +43,9 @@ class DashboardController extends Controller
         $branchesSummary = [];
 
         foreach ($userBranches as $bId) {
+            if (!Balance::where('branch_id', $bId)->exists()) {
+                Balance::initBranchBalances($bId);
+            }
             $balances = Balance::where('branch_id', $bId)->with('bank')->get()->keyBy('bank_id');
             $today = Transaction::where('branch_id', $bId)->whereDate('created_at', today())->count();
             $branch = Branch::find($bId);
@@ -138,11 +137,10 @@ class DashboardController extends Controller
         $prediksiKas = null;
         $prediksiDigital = null;
 
-        $predictionQuery = Transaction::where('created_at', '>=', now()->subDays(30));
-        if ($branchId) {
-            $predictionQuery->where('branch_id', $branchId);
-        }
-        $recentTransactions = $predictionQuery->orderBy('created_at', 'asc')->get();
+        $recentTransactions = Transaction::where('created_at', '>=', now()->subDays(30))
+            ->whereIn('branch_id', $userBranches)
+            ->orderBy('created_at', 'asc')
+            ->get();
 
         if ($recentTransactions->count() >= 7) {
             $historicalKas = SESService::prepareHistoricalData($recentTransactions, 'tarik_tunai');
@@ -180,12 +178,15 @@ class DashboardController extends Controller
 
     public function last30Days(Request $request)
     {
+        $user = $request->user();
         $branchId = $this->getBranchId($request);
 
-        $query = Transaction::where('created_at', '>=', now()->subDays(30));
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
+        $userBranches = $user->isOwner()
+            ? Branch::where('owner_id', $user->id)->pluck('id')
+            : collect([$user->branch_id]);
+
+        $query = Transaction::where('created_at', '>=', now()->subDays(30))
+            ->whereIn('branch_id', $userBranches);
 
         $transactions = $query->orderBy('created_at', 'asc')
             ->get()

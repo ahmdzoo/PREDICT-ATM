@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Traits\BranchScope;
 use App\Models\Balance;
+use App\Models\Branch;
 use App\Models\MasterBank;
 use App\Models\Transaction;
 use App\Services\SESService;
@@ -16,14 +17,17 @@ class PredictionController extends Controller
 
     public function getCurrentPrediction(Request $request)
     {
+        $user = $request->user();
         $branchId = $this->getBranchId($request);
 
-        $query = Transaction::where('created_at', '>=', now()->subDays(30));
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
+        $userBranches = $user->isOwner()
+            ? Branch::where('owner_id', $user->id)->pluck('id')
+            : collect([$user->branch_id]);
 
-        $transactions = $query->orderBy('created_at', 'asc')->get();
+        $transactions = Transaction::where('created_at', '>=', now()->subDays(30))
+            ->whereIn('branch_id', $userBranches)
+            ->orderBy('created_at', 'asc')
+            ->get();
 
         if ($transactions->count() < 7) {
             return response()->json([
@@ -66,25 +70,13 @@ class PredictionController extends Controller
         $saldoKasSekarang = 0;
         $saldoDigitalSekarang = 0;
         $masterBanks = MasterBank::where('is_active', true)->get();
-        if ($branchId) {
-            $balances = Balance::where('branch_id', $branchId)->with('bank')->get();
-            foreach ($balances as $b) {
-                $bank = $masterBanks->firstWhere('id', $b->bank_id);
-                if ($bank && $bank->tipe === 'kas') {
-                    $saldoKasSekarang += (float) $b->saldo;
-                } elseif ($bank) {
-                    $saldoDigitalSekarang += (float) $b->saldo;
-                }
-            }
-        } else {
-            $allBalances = Balance::with('bank')->get();
-            foreach ($allBalances as $b) {
-                $bank = $masterBanks->firstWhere('id', $b->bank_id);
-                if ($bank && $bank->tipe === 'kas') {
-                    $saldoKasSekarang += (float) $b->saldo;
-                } elseif ($bank) {
-                    $saldoDigitalSekarang += (float) $b->saldo;
-                }
+        $balances = Balance::whereIn('branch_id', $userBranches)->with('bank')->get();
+        foreach ($balances as $b) {
+            $bank = $masterBanks->firstWhere('id', $b->bank_id);
+            if ($bank && $bank->tipe === 'kas') {
+                $saldoKasSekarang += (float) $b->saldo;
+            } elseif ($bank) {
+                $saldoDigitalSekarang += (float) $b->saldo;
             }
         }
 
@@ -113,14 +105,17 @@ class PredictionController extends Controller
 
     public function getChartData(Request $request)
     {
+        $user = $request->user();
         $branchId = $this->getBranchId($request);
 
-        $query = Transaction::where('created_at', '>=', now()->subDays(30));
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
+        $userBranches = $user->isOwner()
+            ? Branch::where('owner_id', $user->id)->pluck('id')
+            : collect([$user->branch_id]);
 
-        $transactions = $query->orderBy('created_at', 'asc')->get();
+        $transactions = Transaction::where('created_at', '>=', now()->subDays(30))
+            ->whereIn('branch_id', $userBranches)
+            ->orderBy('created_at', 'asc')
+            ->get();
 
         $historicalKas = [];
         $dates = [];

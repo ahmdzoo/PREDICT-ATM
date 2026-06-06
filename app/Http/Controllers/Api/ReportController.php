@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Traits\BranchScope;
+use App\Models\Branch;
 use App\Models\Transaction;
 use App\Exports\TransactionsExport;
 use Maatwebsite\Excel\Facades\Excel;
@@ -61,19 +62,30 @@ class ReportController extends Controller
 
     public function exportExcel(Request $request)
     {
+        $user = $request->user();
         $branchId = $this->getBranchId($request);
-        return Excel::download(new TransactionsExport($branchId), 'transactions_' . date('Y-m-d') . '.xlsx');
+
+        $branchIds = $branchId
+            ? [$branchId]
+            : ($user->isOwner()
+                ? Branch::where('owner_id', $user->id)->pluck('id')->toArray()
+                : [$user->branch_id]);
+
+        return Excel::download(new TransactionsExport($branchIds), 'transactions_' . date('Y-m-d') . '.xlsx');
     }
 
     public function exportPdf(Request $request)
     {
+        $user = $request->user();
         $branchId = $this->getBranchId($request);
 
-        $query = Transaction::orderBy('created_at', 'desc');
-        if ($branchId) {
-            $query->where('branch_id', $branchId);
-        }
-        $transactions = $query->get();
+        $userBranches = $user->isOwner()
+            ? Branch::where('owner_id', $user->id)->pluck('id')
+            : collect([$user->branch_id]);
+
+        $transactions = Transaction::whereIn('branch_id', $userBranches)
+            ->orderBy('created_at', 'desc')
+            ->get();
 
         $pdf = Pdf::loadView('pdf.transactions', compact('transactions'));
         return $pdf->download('transactions_' . date('Y-m-d') . '.pdf');

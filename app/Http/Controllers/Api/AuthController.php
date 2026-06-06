@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Balance;
 use App\Models\User;
 use App\Models\Branch;
 use Illuminate\Http\Request;
@@ -94,6 +95,7 @@ class AuthController extends Controller
                 'owner_id' => $user->id,
             ]);
 
+            Balance::initBranchBalances($branch->id);
             $user->update(['branch_id' => $branch->id]);
         }
 
