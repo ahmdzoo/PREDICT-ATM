@@ -3,18 +3,27 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Traits\BranchScope;
+use App\Models\Balance;
+use App\Models\MasterBank;
 use App\Models\Transaction;
 use App\Services\SESService;
 use Illuminate\Http\Request;
 
 class PredictionController extends Controller
 {
-    public function getCurrentPrediction()
+    use BranchScope;
+
+    public function getCurrentPrediction(Request $request)
     {
-        // Ambil 30 hari terakhir
-        $transactions = Transaction::where('created_at', '>=', now()->subDays(30))
-            ->orderBy('created_at', 'asc')
-            ->get();
+        $branchId = $this->getBranchId($request);
+
+        $query = Transaction::where('created_at', '>=', now()->subDays(30));
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        $transactions = $query->orderBy('created_at', 'asc')->get();
 
         if ($transactions->count() < 7) {
             return response()->json([
@@ -25,7 +34,6 @@ class PredictionController extends Controller
             ]);
         }
 
-        // Siapkan data historis untuk tarik tunai
         $historicalKas = [];
         foreach ($transactions as $t) {
             if ($t->jenis === 'tarik_tunai') {
@@ -33,7 +41,6 @@ class PredictionController extends Controller
             }
         }
 
-        // Siapkan data historis untuk transfer
         $historicalDigital = [];
         foreach ($transactions as $t) {
             if ($t->jenis === 'transfer') {
@@ -41,7 +48,6 @@ class PredictionController extends Controller
             }
         }
 
-        // Cek apakah data cukup
         if (count($historicalKas) < 3) {
             return response()->json([
                 'success' => true,
@@ -51,20 +57,37 @@ class PredictionController extends Controller
             ]);
         }
 
-        // Cari alpha optimal
         $optimalKas = SESService::findOptimalAlpha($historicalKas);
         $optimalDigital = (count($historicalDigital) >= 3) ? SESService::findOptimalAlpha($historicalDigital) : ['alpha' => 0.5, 'mape' => 0];
 
-        // Hitung prediksi
         $prediksiKas = SESService::forecast($historicalKas, $optimalKas['alpha']);
         $prediksiDigital = (count($historicalDigital) >= 3) ? SESService::forecast($historicalDigital, $optimalDigital['alpha']) : 0;
 
-        // Ambil saldo terakhir
-        $lastTransaction = Transaction::latest()->first();
-        $saldoKasSekarang = $lastTransaction ? (float) $lastTransaction->saldo_kas_setelah : 5000000;
-        $saldoDigitalSekarang = $lastTransaction ? (float) $lastTransaction->saldo_digital_setelah : 3000000;
+        $saldoKasSekarang = 0;
+        $saldoDigitalSekarang = 0;
+        $masterBanks = MasterBank::where('is_active', true)->get();
+        if ($branchId) {
+            $balances = Balance::where('branch_id', $branchId)->with('bank')->get();
+            foreach ($balances as $b) {
+                $bank = $masterBanks->firstWhere('id', $b->bank_id);
+                if ($bank && $bank->tipe === 'kas') {
+                    $saldoKasSekarang += (float) $b->saldo;
+                } elseif ($bank) {
+                    $saldoDigitalSekarang += (float) $b->saldo;
+                }
+            }
+        } else {
+            $allBalances = Balance::with('bank')->get();
+            foreach ($allBalances as $b) {
+                $bank = $masterBanks->firstWhere('id', $b->bank_id);
+                if ($bank && $bank->tipe === 'kas') {
+                    $saldoKasSekarang += (float) $b->saldo;
+                } elseif ($bank) {
+                    $saldoDigitalSekarang += (float) $b->saldo;
+                }
+            }
+        }
 
-        // Hitung rekomendasi dengan buffer 20%
         $bufferPersen = 20;
         $rekomendasiKas = max(0, ($prediksiKas * (100 + $bufferPersen) / 100) - $saldoKasSekarang);
         $rekomendasiDigital = max(0, ($prediksiDigital * (100 + $bufferPersen) / 100) - $saldoDigitalSekarang);
@@ -72,29 +95,33 @@ class PredictionController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'prediksi_kas' => round($prediksiKas, 0),
-                'prediksi_digital' => round($prediksiDigital, 0),
+                'prediksi_kas' => (int) round($prediksiKas, 0),
+                'prediksi_digital' => (int) round($prediksiDigital, 0),
                 'alpha_kas' => $optimalKas['alpha'],
                 'alpha_digital' => $optimalDigital['alpha'],
                 'mape_kas' => $optimalKas['mape'],
                 'mape_digital' => $optimalDigital['mape'],
-                'saldo_kas_sekarang' => $saldoKasSekarang,
-                'saldo_digital_sekarang' => $saldoDigitalSekarang,
-                'rekomendasi_kas' => round($rekomendasiKas, 0),
-                'rekomendasi_digital' => round($rekomendasiDigital, 0),
+                'saldo_kas_sekarang' => (int) $saldoKasSekarang,
+                'saldo_digital_sekarang' => (int) $saldoDigitalSekarang,
+                'rekomendasi_kas' => (int) round($rekomendasiKas, 0),
+                'rekomendasi_digital' => (int) round($rekomendasiDigital, 0),
                 'jumlah_data_kas' => count($historicalKas),
                 'jumlah_data_digital' => count($historicalDigital),
             ]
         ]);
     }
 
-    public function getChartData()
+    public function getChartData(Request $request)
     {
-        $transactions = Transaction::where('created_at', '>=', now()->subDays(30))
-            ->orderBy('created_at', 'asc')
-            ->get();
+        $branchId = $this->getBranchId($request);
 
-        // Ambil data tarik tunai
+        $query = Transaction::where('created_at', '>=', now()->subDays(30));
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+
+        $transactions = $query->orderBy('created_at', 'asc')->get();
+
         $historicalKas = [];
         $dates = [];
         foreach ($transactions as $t) {
@@ -117,7 +144,6 @@ class PredictionController extends Controller
 
         $optimal = SESService::findOptimalAlpha($historicalKas);
 
-        // Generate forecast untuk setiap titik
         $forecasts = [];
         $forecast = $historicalKas[0];
 
@@ -128,7 +154,6 @@ class PredictionController extends Controller
             }
         }
 
-        // Tambahkan prediksi untuk besok
         $nextForecast = SESService::forecast($historicalKas, $optimal['alpha']);
         $forecasts[] = round($nextForecast, 0);
 

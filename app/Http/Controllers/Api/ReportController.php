@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Traits\BranchScope;
 use App\Models\Transaction;
 use App\Exports\TransactionsExport;
 use Maatwebsite\Excel\Facades\Excel;
@@ -11,15 +12,17 @@ use Illuminate\Http\Request;
 
 class ReportController extends Controller
 {
+    use BranchScope;
+
     public function profitLoss(Request $request)
     {
         $startDate = $request->start_date ?? now()->startOfMonth();
         $endDate = $request->end_date ?? now();
 
-        $transactions = Transaction::whereBetween('created_at', [$startDate, $endDate])->get();
+        $query = Transaction::whereBetween('created_at', [$startDate, $endDate]);
+        $query = $this->applyBranchScope($query, $request);
+        $transactions = $query->get();
 
-        // Asumsi: biaya admin nasabah rata-rata Rp 3.500 per transaksi
-        // Biaya dari bank ke agen rata-rata Rp 2.000 per transaksi
         $adminFeeCustomer = 3500;
         $adminFeeBank = 2000;
         $profitPerTransaction = $adminFeeCustomer - $adminFeeBank;
@@ -28,7 +31,6 @@ class ReportController extends Controller
         $totalNominal = $transactions->sum('nominal');
         $totalProfit = $totalTransactions * $profitPerTransaction;
 
-        // Group by date
         $dailyProfit = $transactions->groupBy(function ($t) {
             return $t->created_at->format('Y-m-d');
         })->map(function ($day) use ($profitPerTransaction) {
@@ -57,15 +59,23 @@ class ReportController extends Controller
         ]);
     }
 
-    public function exportExcel()
-{
-    return Excel::download(new TransactionsExport, 'transactions_' . date('Y-m-d') . '.xlsx');
-}
+    public function exportExcel(Request $request)
+    {
+        $branchId = $this->getBranchId($request);
+        return Excel::download(new TransactionsExport($branchId), 'transactions_' . date('Y-m-d') . '.xlsx');
+    }
 
-public function exportPdf()
-{
-    $transactions = Transaction::orderBy('created_at', 'desc')->get();
-    $pdf = Pdf::loadView('pdf.transactions', compact('transactions'));
-    return $pdf->download('transactions_' . date('Y-m-d') . '.pdf');
-}
+    public function exportPdf(Request $request)
+    {
+        $branchId = $this->getBranchId($request);
+
+        $query = Transaction::orderBy('created_at', 'desc');
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+        $transactions = $query->get();
+
+        $pdf = Pdf::loadView('pdf.transactions', compact('transactions'));
+        return $pdf->download('transactions_' . date('Y-m-d') . '.pdf');
+    }
 }

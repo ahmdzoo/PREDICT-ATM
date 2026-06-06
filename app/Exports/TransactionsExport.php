@@ -9,16 +9,27 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 class TransactionsExport implements FromCollection, WithHeadings, WithMapping
 {
+    protected $branchId;
+
+    public function __construct($branchId = null)
+    {
+        $this->branchId = $branchId;
+    }
+
     public function collection()
     {
-        return Transaction::orderBy('created_at', 'desc')->get();
+        $query = Transaction::orderBy('created_at', 'desc');
+        if ($this->branchId) {
+            $query->where('branch_id', $this->branchId);
+        }
+        return $query->get();
     }
-    
+
     public function headings(): array
     {
         return ['ID', 'Jenis', 'Nominal', 'Saldo Kas', 'Saldo Digital', 'Keterangan', 'Tanggal'];
     }
-    
+
     public function map($transaction): array
     {
         return [

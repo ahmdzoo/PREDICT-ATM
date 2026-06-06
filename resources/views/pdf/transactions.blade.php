@@ -73,7 +73,6 @@
                 <td>{{ $t->created_at->format('d/m/Y H:i') }}</td>
                 <td>
                     @if($t->jenis == 'tarik_tunai') Tarik Tunai
-                    @elseif($t->jenis == 'setor_tunai') Setor Tunai
                     @elseif($t->jenis == 'transfer') Transfer
                     @elseif($t->jenis == 'ppob') PPOB
                     @elseif($t->jenis == 'topup_digital') Topup Digital

@@ -9,7 +9,7 @@ return new class extends Migration {
     {
         Schema::create('transactions', function (Blueprint $table) {
             $table->id();
-            $table->enum('jenis', ['tarik_tunai', 'setor_tunai', 'transfer', 'ppob']);
+            $table->string('jenis', 50);
             $table->decimal('nominal', 15, 2);
             $table->decimal('saldo_kas_setelah', 15, 2);
             $table->decimal('saldo_digital_setelah', 15, 2);

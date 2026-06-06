@@ -7,11 +7,12 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -26,6 +27,7 @@ class User extends Authenticatable
         'phone',
         'store_name',
         'store_address',
+        'branch_id',
     ];
 
     protected $casts = [
@@ -35,6 +37,16 @@ class User extends Authenticatable
     public function isOwner()
     {
         return $this->role === 'owner';
+    }
+
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function ownedBranches()
+    {
+        return $this->hasMany(Branch::class, 'owner_id');
     }
 
     /**
